@@ -151,30 +151,35 @@ async function resolveStreams(videoId: string): Promise<PipedResponse> {
     }
   }
 
-  throw new Error(
-    errors.length
-      ? errors.slice(0, 2).join(" · ")
-      : "Cloud resolver unavailable. Try again shortly."
-  );
+  throw new Error(collapseResolverErrors(errors));
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function friendlyResolverError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  if (/SignInConfirmNotBot|LOGIN_REQUIRED|not a bot/i.test(raw)) {
+function collapseResolverErrors(errors: string[]): string {
+  if (!errors.length) return "Cloud resolver unavailable. Try again shortly.";
+  if (errors.some((e) => /blocking anonymous|refused playback|overloaded or blocked/i.test(e))) {
     return "YouTube is blocking anonymous access for this video on the free cloud resolver. Try another video or try again later.";
   }
-  if (/HTTP 5\d\d/.test(raw)) {
+  return errors[0]!;
+}
+
+function friendlyResolverError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const normalized = raw.replace(/[\u2018\u2019]/g, "'");
+  if (/SignInConfirmNotBot|LOGIN_REQUIRED|not a bot|Sign in to confirm/i.test(normalized)) {
+    return "YouTube is blocking anonymous access for this video on the free cloud resolver. Try another video or try again later.";
+  }
+  if (/HTTP 5\d\d/.test(normalized)) {
     return "Free cloud resolver is overloaded or blocked by YouTube right now. Try again in a minute.";
   }
-  if (/innertube/i.test(raw) && /UNPLAYABLE|ERROR|LOGIN_REQUIRED/i.test(raw)) {
+  if (/innertube/i.test(normalized) && /UNPLAYABLE|ERROR|LOGIN_REQUIRED/i.test(normalized)) {
     return "YouTube refused playback for this video via the free cloud path.";
   }
   // Keep short host errors; strip huge Java stacks from Piped.
-  const firstLine = raw.split("\n")[0] ?? raw;
+  const firstLine = normalized.split("\n")[0] ?? normalized;
   return firstLine.length > 180 ? `${firstLine.slice(0, 177)}…` : firstLine;
 }
 
