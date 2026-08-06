@@ -2,33 +2,46 @@
 
 Pull ore from the web. Quench it into lasting metal.
 
-Native Mac companion (**yt-dlp + ffmpeg bundled locally**) plus a **GitHub Pages** web forge.
+## Web UI (GitHub Pages)
 
-## Use on the web
+**https://sbacaro.github.io/VidForge/**
 
-**Web UI:** [https://sbacaro.github.io/VidForge/](https://sbacaro.github.io/VidForge/)
+Rewritten in **TypeScript + Vite**. GitHub Pages is the remote control UI.
 
-The Pages UI can:
+For real downloads at max quality, run the local companion on your Mac (`yt-dlp` + `ffmpeg`). The official Cobalt public API requires JWT and is not supported for third-party sites.
 
-1. Talk to your **local companion** at `http://127.0.0.1:8742` for max-quality Archival remux/encode on your Mac  
-2. Or use a **Cobalt-compatible** public API for in-browser downloads (GitHub Pages cannot run ffmpeg in the cloud)
+### Use with companion
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+vidforge-ui
+```
+
+Keep that running, then use the Pages UI — it talks to `http://127.0.0.1:8742`.
+
+### Develop / rebuild the Pages site
+
+```bash
+cd web
+npm install
+npm run dev      # local preview
+npm run build    # writes static files into /docs
+```
 
 ## Install Mac companion (no Xcode)
 
 ```bash
 git clone https://github.com/sbacaro/VidForge.git
 cd VidForge
-./Scripts/vendor-tools.sh    # downloads ffmpeg + yt-dlp into the project
-./Scripts/install-cli.sh     # installs `vidforge` CLI into ~/.local
-./Scripts/install-ui.sh      # installs browser UI server (`vidforge-ui`)
+./Scripts/vendor-tools.sh
+./Scripts/install-cli.sh
+./Scripts/install-ui.sh
 ```
-
-Then:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-vidforge-ui                  # opens local UI + enables Pages→local mode
-vidforge "https://…"         # pure CLI forge
+vidforge "https://…"
+vidforge-ui
 ```
 
 Output defaults to `~/Movies/VidForge`.
@@ -38,21 +51,20 @@ Output defaults to `~/Movies/VidForge`.
 | Alloy | Intent |
 |-------|--------|
 | **Archive Pure** | Best fidelity / remux when possible |
-| **Crystal** | Near-lossless HEVC locally (or max web quality) |
-| **Tempered** | High-quality H.264 / 1080p web |
+| **Crystal** | Near-lossless keepers |
+| **Tempered** | Everyday high quality / 1080p |
 | **Audio Ingot** | Best audio |
 
-## Repository layout
+## Layout
 
+- `web/` — TypeScript + Vite source for GitHub Pages  
+- `docs/` — built static site (Pages source)  
 - `CLI/` — `vidforge` terminal tool  
-- `UIServer/` — local web UI server used by `vidforge-ui`  
-- `VidForge/` — SwiftUI Mac app sources  
-- `docs/` — GitHub Pages site  
+- `UIServer/` — local companion used by `vidforge-ui`  
+- `VidForge/` — SwiftUI app sources  
 - `Scripts/` — install + vendor helpers  
-
-Bundled binaries are **not** stored in git (GitHub 100MB limit). `Scripts/vendor-tools.sh` fetches them.
 
 ## Notes
 
-- Respect site terms and copyright. Only keep media you have rights to.  
-- Steinberg Activation Manager / SpectraLayers is unrelated to VidForge.
+- Respect site terms and copyright.  
+- Bundled binaries are not stored in git; `Scripts/vendor-tools.sh` fetches them.

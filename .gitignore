@@ -17,6 +17,10 @@ xcuserdata/
 .build/
 .swiftpm/
 
+# Node / web
+web/node_modules/
+web/dist/
+
 # Secrets / local
 .env
 *.log

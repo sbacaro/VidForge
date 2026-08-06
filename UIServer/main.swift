@@ -432,16 +432,18 @@ final class ForgeHTTPServer: @unchecked Sendable {
         let first = header.split(separator: "\r\n", maxSplits: 1).first.map(String.init) ?? ""
         let parts = first.split(separator: " ")
         let method = parts.count > 0 ? String(parts[0]) : "GET"
-        let path = parts.count > 1 ? String(parts[1]) : "/"
+        let pathOnly = parts.count > 1 ? String(parts[1]).split(separator: "?").first.map(String.init) ?? "/" : "/"
 
         let response: Data
-        if method == "GET" && (path == "/" || path.hasPrefix("/?")) {
+        if method == "OPTIONS" {
+            response = corsPreflight()
+        } else if method == "GET" && (pathOnly == "/" ) {
             response = http(200, "text/html; charset=utf-8", UI.html)
-        } else if method == "GET" && path == "/api/jobs" {
+        } else if method == "GET" && pathOnly == "/api/jobs" {
             let jobs = await hub.list()
             let data = (try? JSONEncoder().encode(jobs)) ?? Data("[]".utf8)
             response = http(200, "application/json", String(data: data, encoding: .utf8) ?? "[]")
-        } else if method == "POST" && path == "/api/forge" {
+        } else if method == "POST" && pathOnly == "/api/forge" {
             struct Req: Codable { var url: String; var alloy: String }
             if let req = try? JSONDecoder().decode(Req.self, from: body), !req.url.isEmpty {
                 let job = await hub.enqueue(url: req.url, alloy: req.alloy)
@@ -451,7 +453,7 @@ final class ForgeHTTPServer: @unchecked Sendable {
             } else {
                 response = http(400, "application/json", #"{"error":"bad request"}"#)
             }
-        } else if method == "POST" && path == "/api/reveal" {
+        } else if method == "POST" && pathOnly == "/api/reveal" {
             struct Req: Codable { var path: String }
             if let req = try? JSONDecoder().decode(Req.self, from: body) {
                 _ = Process.launchedProcess(launchPath: "/usr/bin/open", arguments: ["-R", req.path])
@@ -468,10 +470,35 @@ final class ForgeHTTPServer: @unchecked Sendable {
         })
     }
 
+    private func corsPreflight() -> Data {
+        let header = """
+        HTTP/1.1 204 No Content\r
+        Access-Control-Allow-Origin: *\r
+        Access-Control-Allow-Methods: GET, POST, OPTIONS\r
+        Access-Control-Allow-Headers: Content-Type, Authorization\r
+        Access-Control-Allow-Private-Network: true\r
+        Access-Control-Max-Age: 86400\r
+        Connection: close\r
+        \r
+        """
+        return Data(header.utf8)
+    }
+
     private func http(_ code: Int, _ type: String, _ body: String) -> Data {
         let status = code == 200 ? "OK" : (code == 404 ? "Not Found" : "Error")
-        let header = "HTTP/1.1 \(code) \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
-        return Data((header + body).utf8)
+        let header = """
+        HTTP/1.1 \(code) \(status)\r
+        Content-Type: \(type)\r
+        Content-Length: \(body.utf8.count)\r
+        Access-Control-Allow-Origin: *\r
+        Access-Control-Allow-Methods: GET, POST, OPTIONS\r
+        Access-Control-Allow-Headers: Content-Type, Authorization\r
+        Access-Control-Allow-Private-Network: true\r
+        Connection: close\r
+        \r
+        \(body)
+        """
+        return Data(header.utf8)
     }
 }
 
