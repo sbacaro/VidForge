@@ -35,11 +35,10 @@ interface PipedResponse {
   message?: string;
 }
 
-const PIPED_APIS = [
-  "https://api.piped.private.coffee",
-  "https://pipedapi.adminforge.de",
-  "https://pipedapi.kavin.rocks",
-];
+/** Prefer known-good hosts; dead mirrors (526/301 traps) are omitted. */
+const PIPED_APIS = ["https://api.piped.private.coffee"];
+
+const INSTANCE_DIRECTORY = "https://piped-instances.kavin.rocks/";
 
 const ALLOWED_ORIGINS = new Set([
   "https://sbacaro.github.io",
@@ -118,35 +117,67 @@ export default {
   },
 };
 
+async function resolvePipedBases(): Promise<string[]> {
+  const preferred = [...PIPED_APIS];
+  try {
+    const res = await fetch(INSTANCE_DIRECTORY, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return preferred;
+    const rows = (await res.json()) as Array<{ api_url?: string; uptime_24h?: number }>;
+    const discovered = rows
+      .filter((row) => (row.uptime_24h ?? 0) >= 50 && typeof row.api_url === "string")
+      .map((row) => row.api_url!.replace(/\/$/, ""))
+      // Skip hosts that currently serve SSL/edge failures or broken redirects.
+      .filter((url) => !/kavin\.rocks|adminforge\.de/i.test(url));
+    return [...new Set([...preferred, ...discovered])];
+  } catch {
+    return preferred;
+  }
+}
+
 async function fetchPiped(videoId: string): Promise<PipedResponse> {
-  let lastError = "All Piped instances failed.";
-  for (const base of PIPED_APIS) {
+  const bases = await resolvePipedBases();
+  const errors: string[] = [];
+
+  for (const base of bases) {
     try {
       const res = await fetch(`${base}/streams/${videoId}`, {
+        redirect: "error",
         headers: {
           Accept: "application/json",
           "User-Agent": "VidForge/1.0 (+https://github.com/sbacaro/VidForge)",
         },
       });
       if (!res.ok) {
-        lastError = `Piped ${base} HTTP ${res.status}`;
+        errors.push(`${new URL(base).host} HTTP ${res.status}`);
+        continue;
+      }
+      const type = res.headers.get("content-type") ?? "";
+      if (!type.includes("json")) {
+        errors.push(`${new URL(base).host} non-JSON`);
         continue;
       }
       const data = (await res.json()) as PipedResponse;
-      if (data.error || data.message?.toLowerCase().includes("error")) {
-        lastError = data.error || data.message || lastError;
+      if (data.error) {
+        errors.push(data.error);
         continue;
       }
       if ((data.videoStreams?.length ?? 0) + (data.audioStreams?.length ?? 0) === 0) {
-        lastError = "Empty stream list";
+        errors.push(`${new URL(base).host} empty streams`);
         continue;
       }
       return data;
     } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
+      errors.push(e instanceof Error ? e.message : String(e));
     }
   }
-  throw new Error(lastError);
+
+  throw new Error(
+    errors.length
+      ? `Cloud resolver unavailable (${errors.slice(0, 3).join(" · ")}). Try again shortly.`
+      : "Cloud resolver unavailable. Try again shortly."
+  );
 }
 
 function pickStream(
