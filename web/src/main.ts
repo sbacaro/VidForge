@@ -22,7 +22,7 @@ root.innerHTML = `
       <header class="topbar">
         <div class="brand">
           <strong>VIDFORGE</strong>
-          <span>100% browser. Hosted on GitHub Pages. Nothing to install.</span>
+          <span>100% browser. Hosted on GitHub Pages. Nothing to install. · v3</span>
         </div>
       </header>
 
