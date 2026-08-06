@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VidForge — Forge web video</title>
+  <meta name="description" content="VidForge pulls video from the web and quenches it into lasting local files. Use the web forge or the Mac companion." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314110e'/%3E%3Cpath d='M18 40c8-2 12-14 14-22 2 8 6 20 14 22-8 2-12 8-14 14-2-6-6-12-14-14z' fill='%23f08a2a'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <main class="wrap">
+    <header class="hero">
+      <p class="eyebrow">LOCAL · WEB · MAX QUALITY</p>
+      <h1>VIDFORGE</h1>
+      <p class="tagline">Pull ore from the web. Quench it into lasting metal.</p>
+    </header>
+
+    <section class="panel">
+      <label for="url">ORE</label>
+      <input id="url" type="url" placeholder="Paste a YouTube, TikTok, X, Instagram, Vimeo… URL" autocomplete="off" />
+
+      <label class="spaced">ALLOY</label>
+      <div class="alloys" id="alloys" role="listbox" aria-label="Quality alloy"></div>
+
+      <div class="row">
+        <button class="strike" id="strike" type="button">Strike the Anvil</button>
+        <button class="ghost" id="settingsBtn" type="button" title="Engine settings">⚙</button>
+      </div>
+
+      <p class="hint" id="engineHint">Checking forge engine…</p>
+    </section>
+
+    <section class="panel settings" id="settings" hidden>
+      <label for="engine">ENGINE</label>
+      <select id="engine">
+        <option value="auto">Auto (local companion, then web)</option>
+        <option value="local">Local VidForge companion (localhost:8742)</option>
+        <option value="cobalt">Web forge (Cobalt-compatible API)</option>
+      </select>
+      <label class="spaced" for="apiBase">WEB API BASE</label>
+      <input id="apiBase" type="url" value="https://api.cobalt.tools/" />
+      <p class="hint">GitHub Pages cannot run ffmpeg in the cloud. The web engine uses a public Cobalt-compatible API. For maximum local quality, run <code>vidforge-ui</code> on your Mac.</p>
+    </section>
+
+    <section class="panel">
+      <div class="queue-head">
+        <label>THE QUEUE</label>
+        <button class="text" id="clearFinished" type="button">Clear finished</button>
+      </div>
+      <div class="jobs" id="jobs"><div class="empty">The anvil is cold.</div></div>
+    </section>
+
+    <footer class="foot">
+      <a href="https://github.com/sbacaro/VidForge">GitHub</a>
+      <span>·</span>
+      <a href="https://github.com/sbacaro/VidForge#install">Install Mac companion</a>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
