@@ -1,191 +1,147 @@
-import type { AlloyId, ForgeJob, Settings } from "./types";
-import { alloyById, sleep } from "./lib";
+import type { AlloyId, ForgeJob } from "./types";
+import { alloyById } from "./lib";
 
-export async function pingLocal(base: string): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 800);
-    const res = await fetch(`${trimSlash(base)}/api/jobs`, {
-      signal: ctrl.signal,
-      mode: "cors",
-    });
-    clearTimeout(timer);
-    return res.ok;
-  } catch {
-    return false;
-  }
+/** Public Piped instances that allow browser CORS (*). */
+const PIPED_APIS = [
+  "https://api.piped.private.coffee",
+  "https://pipedapi.adminforge.de",
+  "https://pipedapi.kavin.rocks",
+];
+
+interface PipedStream {
+  url?: string;
+  format?: string;
+  quality?: string;
+  mimeType?: string;
+  videoOnly?: boolean;
+  bitrate?: number;
 }
 
-export async function forgeLocal(
-  settings: Settings,
+interface PipedResponse {
+  title?: string;
+  videoStreams?: PipedStream[];
+  audioStreams?: PipedStream[];
+  error?: string;
+  message?: string;
+}
+
+export async function pingCloud(): Promise<boolean> {
+  return navigator.onLine;
+}
+
+export async function forgeCloud(
   job: ForgeJob,
   onUpdate: (patch: Partial<ForgeJob>) => void
 ): Promise<void> {
-  const base = trimSlash(settings.localBase);
-  onUpdate({ phase: "prospecting", progress: 0.08, status: "Connecting to local companion…" });
+  onUpdate({ phase: "prospecting", progress: 0.1, status: "Reading ore veins in the cloud…" });
 
-  const res = await fetch(`${base}/api/forge`, {
-    method: "POST",
-    mode: "cors",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: job.url, alloy: job.alloy }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Local companion HTTP ${res.status}`);
-  }
-
-  const created = (await res.json()) as { id?: string };
-  const localId = created.id;
-
-  for (let i = 0; i < 900; i++) {
-    await sleep(1000);
-    const list = (await (await fetch(`${base}/api/jobs`, { mode: "cors" })).json()) as Array<{
-      id: string;
-      url: string;
-      title: string;
-      phase: string;
-      progress: number;
-      status: string;
-      output?: string;
-      error?: string;
-    }>;
-
-    const match =
-      list.find((x) => x.id === localId) ?? list.find((x) => x.url === job.url);
-    if (!match) continue;
-
-    onUpdate({
-      title: match.title || job.title,
-      phase: normalizePhase(match.phase),
-      progress: match.progress ?? 0,
-      status: match.status,
-      outputPath: match.output,
-      error: match.error,
-    });
-
-    if (match.phase === "finished") {
-      onUpdate({ phase: "finished", progress: 1, status: "Ready on your Mac" });
-      return;
-    }
-    if (match.phase === "failed") {
-      throw new Error(match.error || match.status || "Local forge failed");
-    }
-  }
-
-  throw new Error("Timed out waiting for local companion.");
-}
-
-export async function forgeCustomApi(
-  settings: Settings,
-  job: ForgeJob,
-  onUpdate: (patch: Partial<ForgeJob>) => void
-): Promise<void> {
-  const base = trimSlash(settings.apiBase);
-  if (!base) {
-    throw new Error("Set a Cobalt-compatible API base in Settings.");
+  const videoId = extractYouTubeId(job.url);
+  if (!videoId) {
+    throw new Error("Free cloud engine supports YouTube links only right now.");
   }
 
   const alloy = alloyById(job.alloy);
-  onUpdate({ phase: "smelting", progress: 0.2, status: "Requesting streams…" });
+  onUpdate({ phase: "smelting", progress: 0.35, status: `Smelting ${alloy.name}…` });
 
-  const body: Record<string, unknown> = {
-    url: job.url,
-    filenameStyle: "pretty",
-  };
-
-  if (alloy.quality === "audio") {
-    body.downloadMode = "audio";
-    body.audioFormat = "best";
-  } else {
-    body.downloadMode = "auto";
-    body.videoQuality = alloy.quality === "1080" ? "1080" : "max";
+  const meta = await fetchPiped(videoId);
+  const pick = pickStream(meta, job.alloy);
+  if (!pick?.url) {
+    throw new Error("No suitable stream found for this alloy.");
   }
 
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  };
-  if (settings.apiKey.trim()) {
-    headers.Authorization = `Api-Key ${settings.apiKey.trim()}`;
-  }
-
-  const res = await fetch(`${base}/`, {
-    method: "POST",
-    mode: "cors",
-    headers,
-    body: JSON.stringify(body),
+  onUpdate({
+    phase: "quenching",
+    progress: 0.8,
+    title: meta.title || job.title,
+    status: pick.quality ? `Quenching ${pick.quality}…` : "Opening download…",
   });
-
-  const data = (await res.json().catch(() => ({}))) as {
-    status?: string;
-    url?: string;
-    filename?: string;
-    tunnel?: string;
-    picker?: Array<{ type?: string; url?: string; filename?: string }>;
-    error?: { code?: string; message?: string };
-    text?: string;
-  };
-
-  if (!res.ok || data.status === "error") {
-    const code = data.error?.code || data.text || `HTTP ${res.status}`;
-    if (String(code).includes("auth") || res.status === 401 || res.status === 403) {
-      throw new Error(
-        "API auth required. Official Cobalt blocks third-party apps — use your own instance + Api-Key, or the local companion."
-      );
-    }
-    throw new Error(data.error?.message || String(code));
-  }
-
-  let downloadUrl = data.url || data.tunnel;
-  let title = data.filename || job.title;
-
-  if (data.status === "picker" && data.picker?.length) {
-    const pick = data.picker.find((p) => p.type === "video") ?? data.picker[0];
-    downloadUrl = pick.url;
-    title = pick.filename || title;
-  }
-
-  if (!downloadUrl) {
-    throw new Error("API returned no download URL.");
-  }
 
   onUpdate({
     phase: "finished",
     progress: 1,
-    title,
-    downloadUrl,
-    status: "Ready — download started in a new tab",
+    title: meta.title || job.title,
+    downloadUrl: pick.url,
+    status: "Ready — tap Download",
   });
 
-  window.open(downloadUrl, "_blank", "noopener,noreferrer");
+  window.open(pick.url, "_blank", "noopener,noreferrer");
 }
 
-function normalizePhase(phase: string): ForgeJob["phase"] {
-  switch (phase) {
-    case "queued":
-    case "prospecting":
-    case "smelting":
-    case "quenching":
-    case "finished":
-    case "failed":
-      return phase;
-    default:
-      return "smelting";
+async function fetchPiped(videoId: string): Promise<PipedResponse> {
+  let last = "All cloud resolvers failed.";
+  for (const base of PIPED_APIS) {
+    try {
+      const res = await fetch(`${base}/streams/${videoId}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) {
+        last = `${base} HTTP ${res.status}`;
+        continue;
+      }
+      const data = (await res.json()) as PipedResponse;
+      if (data.error) {
+        last = data.error;
+        continue;
+      }
+      const count = (data.videoStreams?.length ?? 0) + (data.audioStreams?.length ?? 0);
+      if (!count) {
+        last = "Empty stream list";
+        continue;
+      }
+      return data;
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e);
+    }
   }
+  throw new Error(last);
 }
 
-function trimSlash(value: string): string {
-  return value.replace(/\/+$/, "");
-}
+function pickStream(
+  meta: PipedResponse,
+  alloy: AlloyId
+): { url: string; quality?: string } | null {
+  const videos = meta.videoStreams ?? [];
+  const audios = meta.audioStreams ?? [];
 
-export function describeEngineNeed(mode: Settings["engine"], online: boolean): string {
-  if (mode === "local") {
-    return online
-      ? "Local companion online — max quality on this Mac."
-      : "Local companion offline. Run: vidforge-ui";
+  if (alloy === "audio-ingot") {
+    const best = [...audios].sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
+    return best?.url ? { url: best.url, quality: best.quality ?? `${best.bitrate ?? "?"}bps` } : null;
   }
-  return "Custom Cobalt-compatible API (needs your instance URL and usually an Api-Key).";
+
+  const muxed = videos.filter((v) => v.videoOnly === false && v.url);
+  const pool = muxed.length ? muxed : videos.filter((v) => v.url);
+  if (!pool.length) return null;
+
+  const ranked = pool
+    .map((v) => ({ v, h: parseHeight(v.quality) }))
+    .sort((a, b) => b.h - a.h || (b.v.bitrate ?? 0) - (a.v.bitrate ?? 0));
+
+  let chosen = ranked[0];
+  if (alloy === "tempered") {
+    chosen = ranked.find((x) => x.h > 0 && x.h <= 1080) ?? ranked.find((x) => x.h === 720) ?? ranked[0];
+  }
+
+  return { url: chosen.v.url!, quality: chosen.v.quality ?? `${chosen.h}p` };
 }
 
-export type { AlloyId };
+function parseHeight(quality?: string): number {
+  if (!quality) return 0;
+  const m = quality.match(/(\d{3,4})/);
+  return m ? Number(m[1]) : 0;
+}
+
+function extractYouTubeId(input: string): string | null {
+  try {
+    const u = new URL(input);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") return u.pathname.split("/").filter(Boolean)[0] ?? null;
+    if (host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com") || host === "m.youtube.com") {
+      if (u.searchParams.get("v")) return u.searchParams.get("v");
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (["shorts", "embed", "live"].includes(parts[0] ?? "")) return parts[1] ?? null;
+    }
+  } catch {
+    /* bare id */
+  }
+  return /^[\w-]{11}$/.test(input.trim()) ? input.trim() : null;
+}

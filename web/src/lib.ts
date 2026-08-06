@@ -1,21 +1,5 @@
-import type { AlloyId, ForgeJob, Settings } from "./types";
-import { ALLOYS, DEFAULT_SETTINGS } from "./types";
-
-const KEY = "vidforge.pages.v2";
-
-export function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-export function saveSettings(settings: Settings): void {
-  localStorage.setItem(KEY, JSON.stringify(settings));
-}
+import type { AlloyId, ForgeJob } from "./types";
+import { ALLOYS } from "./types";
 
 export function alloyById(id: AlloyId) {
   return ALLOYS.find((a) => a.id === id) ?? ALLOYS[0];
@@ -23,10 +7,6 @@ export function alloyById(id: AlloyId) {
 
 export function uid(): string {
   return crypto.randomUUID();
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export function phaseLabel(phase: ForgeJob["phase"]): string {

@@ -2,65 +2,24 @@
 
 Pull ore from the web. Quench it into lasting metal.
 
-## Web UI
+## Use — nothing to install
 
 **https://sbacaro.github.io/VidForge/**
 
-TypeScript + Vite remote control. For real downloads, run the local companion.
+Runs entirely in the browser on **GitHub Pages**. No Mac companion. No Homebrew. No Xcode.
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-vidforge-ui
-```
+Free cloud engine resolves **YouTube** streams and opens the download.
 
-## Install (no Xcode)
-
-```bash
-git clone https://github.com/sbacaro/VidForge.git
-cd VidForge
-./Scripts/vendor-tools.sh
-./Scripts/install-cli.sh
-./Scripts/install-ui.sh
-```
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-vidforge "https://…"
-vidforge-ui
-```
-
-Output: `~/Movies/VidForge`
-
-## Develop the Pages site
+## Develop UI
 
 ```bash
 cd web
 npm install
 npm run dev
-npm run build   # writes to /docs
+npm run build   # writes static files to /docs for GitHub Pages
 ```
 
-## Layout
+## Optional (advanced)
 
-| Path | Role |
-|------|------|
-| `web/` | Pages source (TypeScript + Vite) |
-| `docs/` | Built static site for GitHub Pages |
-| `CLI/` | `vidforge` terminal tool |
-| `UIServer/` | Local companion API (`vidforge-ui`) |
-| `Scripts/` | vendor + install helpers |
-| `vendor/` | Local ffmpeg/yt-dlp (gitignored binaries) |
-
-## Alloys
-
-| Alloy | Intent |
-|-------|--------|
-| Archive Pure | Best fidelity |
-| Crystal | Near-lossless keepers |
-| Tempered | Everyday high quality / 1080p |
-| Audio Ingot | Best audio |
-
-## Notes
-
-- Official Cobalt API requires JWT and is not used by default.
-- Respect site terms and copyright.
+`api/` contains a Cloudflare Worker sketch if you want a server-side path later.  
+`CLI/` / `UIServer/` are optional local tools — not required for the website.

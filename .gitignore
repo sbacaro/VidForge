@@ -11,9 +11,10 @@ xcuserdata/
 .build/
 .swiftpm/
 
-# Node / web
+# Node
 web/node_modules/
 web/dist/
+api/node_modules/
 
 # Secrets / local
 .env
