@@ -143,12 +143,16 @@ async function fetchPiped(videoId: string): Promise<PipedResponse> {
   for (const base of bases) {
     try {
       const res = await fetch(`${base}/streams/${videoId}`, {
-        redirect: "error",
+        redirect: "manual",
         headers: {
           Accept: "application/json",
           "User-Agent": "VidForge/1.0 (+https://github.com/sbacaro/VidForge)",
         },
       });
+      if (res.status >= 300 && res.status < 400) {
+        errors.push(`${new URL(base).host} bad redirect`);
+        continue;
+      }
       if (!res.ok) {
         errors.push(`${new URL(base).host} HTTP ${res.status}`);
         continue;
