@@ -7,7 +7,7 @@ PREFIX="${HOME}/.local"
 SHARE="${PREFIX}/share/vidforge"
 BIN_DIR="${SHARE}/bin"
 LINK="${PREFIX}/bin/vidforge"
-TOOLS="${ROOT}/VidForge/BundledTools"
+TOOLS="${ROOT}/vendor"
 
 echo "┌──────────────────────────────────┐"
 echo "│  VidForge CLI installer          │"
@@ -40,7 +40,6 @@ cp -f "${TOOLS}/yt-dlp" "${TOOLS}/ffmpeg" "${TOOLS}/ffprobe" "${BIN_DIR}/"
 chmod +x "${BIN_DIR}/vidforge" "${BIN_DIR}/yt-dlp" "${BIN_DIR}/ffmpeg" "${BIN_DIR}/ffprobe"
 xattr -cr "${BIN_DIR}/vidforge" "${BIN_DIR}/yt-dlp" "${BIN_DIR}/ffmpeg" "${BIN_DIR}/ffprobe" 2>/dev/null || true
 
-# Keep a tiny launcher so VIDFORGE_HOME is always set.
 cat > "${LINK}" << EOF
 #!/usr/bin/env bash
 export VIDFORGE_HOME="${BIN_DIR}"
@@ -48,7 +47,6 @@ exec "${BIN_DIR}/vidforge" "\$@"
 EOF
 chmod +x "${LINK}"
 
-# Ensure ~/.local/bin is on PATH for this shell and future zsh/bash sessions.
 ensure_path_line='export PATH="$HOME/.local/bin:$PATH"'
 for rc in "${HOME}/.zshrc" "${HOME}/.zprofile" "${HOME}/.bashrc" "${HOME}/.bash_profile"; do
   if [[ -f "${rc}" ]] || [[ "${rc}" == "${HOME}/.zshrc" ]]; then

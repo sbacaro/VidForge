@@ -2,33 +2,18 @@
 
 Pull ore from the web. Quench it into lasting metal.
 
-## Web UI (GitHub Pages)
+## Web UI
 
 **https://sbacaro.github.io/VidForge/**
 
-Rewritten in **TypeScript + Vite**. GitHub Pages is the remote control UI.
-
-For real downloads at max quality, run the local companion on your Mac (`yt-dlp` + `ffmpeg`). The official Cobalt public API requires JWT and is not supported for third-party sites.
-
-### Use with companion
+TypeScript + Vite remote control. For real downloads, run the local companion.
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 vidforge-ui
 ```
 
-Keep that running, then use the Pages UI — it talks to `http://127.0.0.1:8742`.
-
-### Develop / rebuild the Pages site
-
-```bash
-cd web
-npm install
-npm run dev      # local preview
-npm run build    # writes static files into /docs
-```
-
-## Install Mac companion (no Xcode)
+## Install (no Xcode)
 
 ```bash
 git clone https://github.com/sbacaro/VidForge.git
@@ -44,27 +29,38 @@ vidforge "https://…"
 vidforge-ui
 ```
 
-Output defaults to `~/Movies/VidForge`.
+Output: `~/Movies/VidForge`
+
+## Develop the Pages site
+
+```bash
+cd web
+npm install
+npm run dev
+npm run build   # writes to /docs
+```
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `web/` | Pages source (TypeScript + Vite) |
+| `docs/` | Built static site for GitHub Pages |
+| `CLI/` | `vidforge` terminal tool |
+| `UIServer/` | Local companion API (`vidforge-ui`) |
+| `Scripts/` | vendor + install helpers |
+| `vendor/` | Local ffmpeg/yt-dlp (gitignored binaries) |
 
 ## Alloys
 
 | Alloy | Intent |
 |-------|--------|
-| **Archive Pure** | Best fidelity / remux when possible |
-| **Crystal** | Near-lossless keepers |
-| **Tempered** | Everyday high quality / 1080p |
-| **Audio Ingot** | Best audio |
-
-## Layout
-
-- `web/` — TypeScript + Vite source for GitHub Pages  
-- `docs/` — built static site (Pages source)  
-- `CLI/` — `vidforge` terminal tool  
-- `UIServer/` — local companion used by `vidforge-ui`  
-- `VidForge/` — SwiftUI app sources  
-- `Scripts/` — install + vendor helpers  
+| Archive Pure | Best fidelity |
+| Crystal | Near-lossless keepers |
+| Tempered | Everyday high quality / 1080p |
+| Audio Ingot | Best audio |
 
 ## Notes
 
-- Respect site terms and copyright.  
-- Bundled binaries are not stored in git; `Scripts/vendor-tools.sh` fetches them.
+- Official Cobalt API requires JWT and is not used by default.
+- Respect site terms and copyright.

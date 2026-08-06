@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Maintainer utility: refresh engines that get copied into VidForge.app at build time.
-# End users never run this — the .app already contains the binaries.
+# Refresh vendored engines into ./vendor (not committed to git).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/VidForge/BundledTools"
+DEST="$ROOT/vendor"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -47,8 +46,8 @@ chmod +x "$DEST/ffmpeg" "$DEST/ffprobe"
 xattr -cr "$DEST/yt-dlp" "$DEST/ffmpeg" "$DEST/ffprobe" 2>/dev/null || true
 
 cat > "$DEST/README.txt" << 'EOF'
-Bundled engines copied into VidForge.app/Contents/Helpers at build time.
-Runtime never downloads or invokes Homebrew tools.
+Vendored engines for local installers (not committed to git).
+Runtime copies them into ~/.local/share/vidforge/bin.
 Refresh with: Scripts/vendor-tools.sh
 EOF
 
@@ -59,4 +58,4 @@ echo "Versions:"
 "$DEST/ffprobe" -version | head -n 1
 ls -lh "$DEST/yt-dlp" "$DEST/ffmpeg" "$DEST/ffprobe"
 echo ""
-echo "Done. Build the Xcode project to embed them in the .app."
+echo "Done."

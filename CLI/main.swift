@@ -145,7 +145,7 @@ enum Alloy: String, CaseIterable {
 }
 
 enum ToolPaths {
-    /// Prefer VIDFORGE_HOME, then directory next to the executable, then repo BundledTools.
+    /// Prefer VIDFORGE_HOME, then directory next to the executable, then repo vendor/.
     static var home: URL {
         if let env = ProcessInfo.processInfo.environment["VIDFORGE_HOME"] {
             return URL(fileURLWithPath: env, isDirectory: true)
@@ -160,7 +160,7 @@ enum ToolPaths {
         // Development fallback: repo layout
         let repoTools = beside
             .deletingLastPathComponent() // .build/…
-            .appendingPathComponent("VidForge/BundledTools")
+            .appendingPathComponent("vendor")
         if FileManager.default.fileExists(atPath: repoTools.appendingPathComponent("ffmpeg").path) {
             return repoTools
         }

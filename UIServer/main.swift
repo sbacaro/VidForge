@@ -7,12 +7,13 @@ struct VidForgeServerMain {
         let args = Array(CommandLine.arguments.dropFirst())
         if args.contains("-h") || args.contains("--help") {
             print("""
-            VidForge UI server
+            VidForge local companion
 
               vidforge-ui-server [--port 8742]
 
-            Opens http://127.0.0.1:<port> in your browser.
-            Engines are bundled; nothing else is downloaded.
+            Serves the forge API for the GitHub Pages UI and opens:
+            https://sbacaro.github.io/VidForge/
+            Engines are bundled locally; nothing else is downloaded at runtime.
             """)
             Foundation.exit(0)
         }
@@ -37,10 +38,12 @@ struct VidForgeServerMain {
             Foundation.exit(1)
         }
 
-        let url = "http://127.0.0.1:\(port)"
-        print("VidForge UI → \(url)")
+        let api = "http://127.0.0.1:\(port)"
+        let pages = "https://sbacaro.github.io/VidForge/"
+        print("VidForge companion API → \(api)")
+        print("VidForge UI            → \(pages)")
         print("Press Ctrl+C to stop.")
-        _ = Process.launchedProcess(launchPath: "/usr/bin/open", arguments: [url])
+        _ = Process.launchedProcess(launchPath: "/usr/bin/open", arguments: [pages])
 
         // Keep alive
         while true {
@@ -437,8 +440,10 @@ final class ForgeHTTPServer: @unchecked Sendable {
         let response: Data
         if method == "OPTIONS" {
             response = corsPreflight()
-        } else if method == "GET" && (pathOnly == "/" ) {
-            response = http(200, "text/html; charset=utf-8", UI.html)
+        } else if method == "GET" && pathOnly == "/" {
+            response = http(200, "text/html; charset=utf-8", Self.landingHTML)
+        } else if method == "GET" && pathOnly == "/api/health" {
+            response = http(200, "application/json", #"{"ok":true,"service":"vidforge-companion"}"#)
         } else if method == "GET" && pathOnly == "/api/jobs" {
             let jobs = await hub.list()
             let data = (try? JSONEncoder().encode(jobs)) ?? Data("[]".utf8)
@@ -500,137 +505,22 @@ final class ForgeHTTPServer: @unchecked Sendable {
         """
         return Data(header.utf8)
     }
-}
 
-enum UI {
-    static let html = #"""
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>VidForge</title>
-<style>
-  :root {
-    --bg0:#12110f; --bg1:#1a1612; --ink:#f4ead7; --muted:rgba(244,234,215,.55);
-    --ember:#f08a2a; --ember2:#ffcf70; --line:rgba(255,255,255,.08);
-    --ok:#7dcf7a; --bad:#ef6a5a;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0; min-height:100vh; color:var(--ink);
-    font:15px/1.45 "Avenir Next", "Segoe UI", sans-serif;
-    background:
-      radial-gradient(900px 480px at 50% 115%, rgba(240,80,10,.28), transparent 60%),
-      radial-gradient(520px 320px at 10% 20%, rgba(40,90,110,.16), transparent 60%),
-      linear-gradient(160deg, var(--bg0), var(--bg1) 50%, #0d0c0b);
-  }
-  .wrap{max-width:1080px;margin:0 auto;padding:36px 22px 60px}
-  h1{
-    margin:0; font:800 42px/1 "Avenir Next Condensed","Avenir Next",sans-serif;
-    letter-spacing:.18em; text-transform:uppercase;
-    background:linear-gradient(90deg,#fff1d2,var(--ember2),var(--ember));
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    filter:drop-shadow(0 0 18px rgba(240,100,20,.35));
-  }
-  .tag{margin-top:8px;color:var(--muted); letter-spacing:.04em}
-  .panel{
-    margin-top:28px; padding:18px; border:1px solid var(--line);
-    background:rgba(255,255,255,.035); border-radius:16px;
-    backdrop-filter: blur(8px);
-  }
-  label{display:block; font-size:11px; letter-spacing:.18em; color:var(--muted); margin-bottom:8px}
-  input[type=url], select{
-    width:100%; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.28);
-    color:var(--ink); border-radius:12px; padding:14px 14px; outline:none;
-  }
-  input[type=url]:focus{border-color:rgba(240,138,42,.7)}
-  .alloys{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:14px}
-  .alloy{
-    text-align:left; cursor:pointer; border-radius:12px; padding:12px;
-    border:1px solid var(--line); background:rgba(255,255,255,.03); color:inherit;
-  }
-  .alloy.active{border-color:rgba(240,138,42,.8); background:rgba(240,138,42,.1)}
-  .alloy b{display:block; margin-bottom:4px}
-  .alloy span{color:var(--muted); font-size:12px}
-  button.strike{
-    margin-top:16px; width:100%; border:0; border-radius:12px; padding:15px 18px;
-    font-weight:700; cursor:pointer; color:#1a1208;
-    background:linear-gradient(180deg, var(--ember2), var(--ember));
-    box-shadow:0 10px 30px rgba(240,100,20,.35);
-  }
-  button.strike:disabled{opacity:.5; cursor:not-allowed; box-shadow:none}
-  .jobs{display:flex; flex-direction:column; gap:10px; margin-top:18px}
-  .job{padding:14px; border-radius:12px; border:1px solid var(--line); background:rgba(0,0,0,.22)}
-  .job .top{display:flex; justify-content:space-between; gap:12px; align-items:flex-start}
-  .job .phase{font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ember2)}
-  .job .phase.done{color:var(--ok)} .job .phase.fail{color:var(--bad)}
-  .bar{height:6px; border-radius:999px; background:rgba(255,255,255,.08); margin:10px 0; overflow:hidden}
-  .bar > i{display:block; height:100%; width:0; background:linear-gradient(90deg,#d2410a,var(--ember2)); transition:width .25s}
-  .status{color:var(--muted); font-size:12px; word-break:break-word}
-  .link{color:var(--ember2); cursor:pointer; background:none; border:0; padding:0; font:inherit}
-  @media (max-width:720px){ .alloys{grid-template-columns:1fr} h1{font-size:32px; letter-spacing:.12em} }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>VidForge</h1>
-    <div class="tag">Pull ore from the web. Quench it into lasting metal. · local engines only</div>
-
-    <div class="panel">
-      <label>ORE</label>
-      <input id="url" type="url" placeholder="Paste a YouTube / Vimeo / other video URL…"/>
-      <label style="margin-top:16px">ALLOY</label>
-      <div class="alloys" id="alloys"></div>
-      <button class="strike" id="strike">Strike the Anvil</button>
-    </div>
-
-    <div class="panel">
-      <label>THE QUEUE</label>
-      <div class="jobs" id="jobs"><div class="status">The anvil is cold.</div></div>
-    </div>
-  </div>
-<script>
-const alloys = [
-  {id:'archive-pure', title:'Archive Pure', desc:'Maximum fidelity remux → MKV'},
-  {id:'crystal', title:'Crystal', desc:'Near-lossless HEVC (x265 CRF 16)'},
-  {id:'tempered', title:'Tempered', desc:'High-quality H.264 for playback'},
-  {id:'audio-ingot', title:'Audio Ingot', desc:'Best audio → FLAC'},
-];
-let selected = 'archive-pure';
-const box = document.getElementById('alloys');
-alloys.forEach(a => {
-  const b = document.createElement('button');
-  b.type='button'; b.className='alloy'+(a.id===selected?' active':'');
-  b.innerHTML = `<b>${a.title}</b><span>${a.desc}</span>`;
-  b.onclick=()=>{selected=a.id; [...box.children].forEach(x=>x.classList.remove('active')); b.classList.add('active');};
-  box.appendChild(b);
-});
-
-async function refresh(){
-  const jobs = await (await fetch('/api/jobs')).json();
-  const el = document.getElementById('jobs');
-  if(!jobs.length){ el.innerHTML='<div class="status">The anvil is cold.</div>'; return; }
-  el.innerHTML = jobs.map(j => {
-    const cls = j.phase==='finished'?'done':(j.phase==='failed'?'fail':'');
-    const reveal = j.output ? `<button class="link" onclick="reveal('${j.output.replace(/'/g,"\\\\'")}')">Reveal</button>` : '';
-    return `<div class="job"><div class="top"><div><strong>${escapeHtml(j.title)}</strong><div class="status">${escapeHtml(j.alloy)}</div></div><div class="phase ${cls}">${escapeHtml(j.phase)}</div></div><div class="bar"><i style="width:${Math.round((j.progress||0)*100)}%"></i></div><div class="status">${escapeHtml(j.status||'')}</div>${reveal}</div>`;
-  }).join('');
-}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
-async function reveal(path){ await fetch('/api/reveal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})}); }
-document.getElementById('strike').onclick = async () => {
-  const url = document.getElementById('url').value.trim();
-  if(!url) return;
-  document.getElementById('strike').disabled = true;
-  await fetch('/api/forge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url, alloy:selected})});
-  document.getElementById('url').value='';
-  document.getElementById('strike').disabled = false;
-  refresh();
-};
-refresh(); setInterval(refresh, 1200);
-</script>
-</body>
-</html>
-"""#
+    private static let landingHTML = """
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8"/>
+      <meta http-equiv="refresh" content="0; url=https://sbacaro.github.io/VidForge/"/>
+      <title>VidForge companion</title>
+      <style>
+        body{font:16px/1.4 system-ui;background:#100e0c;color:#f4ead7;display:grid;place-items:center;min-height:100vh;margin:0}
+        a{color:#ffd27a}
+      </style>
+    </head>
+    <body>
+      <p>Companion online. Open the UI: <a href="https://sbacaro.github.io/VidForge/">sbacaro.github.io/VidForge</a></p>
+    </body>
+    </html>
+    """
 }

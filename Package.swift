@@ -6,7 +6,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "vidforge", targets: ["vidforge"]),
-        .executable(name: "VidForgeApp", targets: ["VidForgeApp"]),
         .executable(name: "vidforge-ui-server", targets: ["vidforge-ui-server"])
     ],
     targets: [
@@ -14,15 +13,6 @@ let package = Package(
             name: "vidforge",
             path: "CLI",
             exclude: ["README.md"]
-        ),
-        .executableTarget(
-            name: "VidForgeApp",
-            path: "VidForge",
-            exclude: [
-                "Assets.xcassets",
-                "VidForge.entitlements",
-                "BundledTools"
-            ]
         ),
         .executableTarget(
             name: "vidforge-ui-server",

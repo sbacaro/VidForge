@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Install the local VidForge web UI (opens in browser — never Steinberg / SpectraLayers).
+# Install the local companion API used by the GitHub Pages UI.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PREFIX="${HOME}/.local"
 SHARE="${PREFIX}/share/vidforge"
 BIN_DIR="${SHARE}/bin"
-TOOLS="${ROOT}/VidForge/BundledTools"
+TOOLS="${ROOT}/vendor"
+PAGES_URL="https://sbacaro.github.io/VidForge/"
 
 echo "┌──────────────────────────────────┐"
-echo "│  VidForge UI (browser) installer │"
+echo "│  VidForge companion installer    │"
 echo "└──────────────────────────────────┘"
 
 for tool in yt-dlp ffmpeg ffprobe; do
-  [[ -f "${TOOLS}/${tool}" ]] || { echo "missing ${tool}"; exit 1; }
+  [[ -f "${TOOLS}/${tool}" ]] || { echo "missing ${tool} — run Scripts/vendor-tools.sh"; exit 1; }
 done
 
 cd "${ROOT}"
@@ -33,20 +34,22 @@ exec "${BIN_DIR}/vidforge-ui-server" "\$@"
 EOF
 chmod +x "${PREFIX}/bin/vidforge-ui"
 
-# Desktop launcher
 cat > "${HOME}/Desktop/VidForge Video.command" << EOF
 #!/bin/bash
 export PATH="\$HOME/.local/bin:\$PATH"
 export VIDFORGE_HOME="${BIN_DIR}"
-exec "${BIN_DIR}/vidforge-ui-server"
+# Start companion, then open the GitHub Pages UI.
+"${BIN_DIR}/vidforge-ui-server" &
+sleep 1
+open "${PAGES_URL}"
+wait
 EOF
 chmod +x "${HOME}/Desktop/VidForge Video.command"
 xattr -cr "${HOME}/Desktop/VidForge Video.command" 2>/dev/null || true
 
 echo ""
-echo "Installed. Start the UI with:"
+echo "Installed. Start companion:"
 echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 echo "  vidforge-ui"
 echo ""
-echo "Or double-click: Desktop → VidForge Video.command"
-echo "It opens http://127.0.0.1:8742 in your browser (this is VidForge, not Steinberg)."
+echo "Then use: ${PAGES_URL}"

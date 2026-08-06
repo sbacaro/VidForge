@@ -1,14 +1,8 @@
-# Xcode
+# Xcode leftovers (if reintroduced)
 DerivedData/
 build/
 *.xcuserstate
 xcuserdata/
-*.xccheckout
-*.moved-aside
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
 
 # macOS
 .DS_Store
@@ -25,12 +19,12 @@ web/dist/
 .env
 *.log
 
-# Bundled binaries are too large for GitHub (>100MB).
+# Vendored binaries are too large for GitHub (>100MB).
 # Installers download them via Scripts/vendor-tools.sh
-VidForge/BundledTools/yt-dlp
-VidForge/BundledTools/ffmpeg
-VidForge/BundledTools/ffprobe
-VidForge/BundledTools/*.zip
+vendor/yt-dlp
+vendor/ffmpeg
+vendor/ffprobe
+vendor/*.zip
 
 # Local install output
 Movies/VidForge/
