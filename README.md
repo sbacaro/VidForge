@@ -1,61 +1,45 @@
 # VidForge
 
-Pull ore from the web. Quench it into lasting metal.
+Native **macOS** app that pulls web video (YouTube and sites yt-dlp supports) and quenches it into lasting local files.
 
-## Recommended — hybrid (reliable)
+Stack: **Swift + SwiftUI** (best fit for a Mac-native UI) driving bundled **yt-dlp** and **ffmpeg**. YouTube auth uses your browser session (`--cookies-from-browser`).
 
-GitHub Pages UI + a small **local companion** on your Mac. The companion uses **bundled yt-dlp/ffmpeg** and your **browser YouTube login** (`--cookies-from-browser`, auto: Chrome → Chromium → Brave → Edge → Safari).
-
-1. Install once:
+## Install
 
 ```bash
-cd ~/Projects/VidForge   # or your clone
-./Scripts/install-ui.sh
+cd ~/Projects/VidForge
+./Scripts/install-app.sh
 ```
 
-2. Start the companion:
+That vendors engines (if needed), builds `VidForge.app`, copies it to `~/Applications`, and opens it.
+
+## Use
+
+1. Stay logged into YouTube in **Chrome** (preferred) or Safari.
+2. If cookie reads fail: **System Settings → Privacy & Security → Full Disk Access** → enable **VidForge**.
+3. Paste a URL, pick an alloy, hit **Strike**.
+4. Files land in `~/Movies/VidForge`.
+
+Settings (⌘,) let you force a browser cookie source.
+
+## Alloys
+
+| Alloy | Result |
+|-------|--------|
+| Archive Pure | Max-fidelity remux → MKV |
+| Crystal | Near-lossless HEVC (x265) |
+| Tempered | High-quality H.264 |
+| Audio Ingot | Best audio → FLAC |
+
+## Develop
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-vidforge-ui
+./Scripts/vendor-tools.sh   # once
+swift run VidForge          # debug from repo (uses ./vendor)
+./Scripts/bundle-app.sh     # produce dist/VidForge.app
 ```
 
-3. Use the UI: **https://sbacaro.github.io/VidForge/**
+## Notes
 
-Forged files land in `~/Movies/VidForge`.
-
-### Cookies / permissions
-
-- Stay logged into YouTube in Chrome (preferred) or Safari.
-- Force a browser: `export VIDFORGE_BROWSER=chrome`
-- If yt-dlp cannot read cookies on macOS: **System Settings → Privacy & Security → Full Disk Access** → enable Terminal (or the app that starts `vidforge-ui`), then restart the companion.
-
-### CLI
-
-```bash
-./Scripts/install-cli.sh   # if you also want `vidforge` on PATH
-vidforge "https://www.youtube.com/watch?v=…"
-```
-
-## Cloud fallback (fragile)
-
-If the companion is offline, the Pages UI can call a Cloudflare Worker. That path is **anonymous** and YouTube often blocks it (`not a bot`). Prefer the local companion for real use.
-
-## Develop UI
-
-```bash
-cd web
-npm install
-npm run dev
-npm run build   # writes static files to /docs for GitHub Pages
-```
-
-## Layout
-
-| Path | Role |
-|------|------|
-| `web/` → `docs/` | GitHub Pages UI |
-| `UIServer/` | Local companion API (`vidforge-ui`) |
-| `CLI/` | Terminal forge (`vidforge`) |
-| `Shared/` | Browser cookie detection for companion + CLI |
-| `api/` | Optional Cloudflare Worker (anonymous fallback) |
+- Engines in `vendor/` are gitignored (large binaries). Install scripts download them.
+- No Cloudflare Worker, no GitHub Pages companion. Everything runs on your Mac.

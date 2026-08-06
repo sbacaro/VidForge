@@ -1,6 +1,7 @@
-# Xcode leftovers (if reintroduced)
+# Xcode leftovers
 DerivedData/
 build/
+dist/
 *.xcuserstate
 xcuserdata/
 
@@ -11,16 +12,11 @@ xcuserdata/
 .build/
 .swiftpm/
 
-# Node
-web/node_modules/
-web/dist/
-api/node_modules/
-
 # Secrets / local
 .env
 *.log
 
-# Vendored binaries are too large for GitHub (>100MB).
+# Vendored binaries are too large for GitHub.
 # Installers download them via Scripts/vendor-tools.sh
 vendor/yt-dlp
 vendor/ffmpeg
