@@ -137,23 +137,45 @@ export default {
 async function resolveStreams(videoId: string): Promise<PipedResponse> {
   const errors: string[] = [];
 
-  try {
-    return await fetchInnerTube(videoId);
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e));
-  }
-
-  try {
-    return await fetchPiped(videoId);
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e));
+  // Prefer Piped when healthy (sometimes higher-quality progressive via proxy).
+  // Fall back to InnerTube; both get short retries for transient 5xx.
+  for (const engine of [fetchPiped, fetchInnerTube] as const) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) await sleep(350 * attempt);
+        return await engine(videoId);
+      } catch (e) {
+        const msg = friendlyResolverError(e);
+        if (attempt === 2) errors.push(msg);
+      }
+    }
   }
 
   throw new Error(
     errors.length
-      ? `Cloud resolver unavailable (${errors.slice(0, 2).join(" · ")}). Try again shortly.`
+      ? errors.slice(0, 2).join(" · ")
       : "Cloud resolver unavailable. Try again shortly."
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function friendlyResolverError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/SignInConfirmNotBot|LOGIN_REQUIRED|not a bot/i.test(raw)) {
+    return "YouTube is blocking anonymous access for this video on the free cloud resolver. Try another video or try again later.";
+  }
+  if (/HTTP 5\d\d/.test(raw)) {
+    return "Free cloud resolver is overloaded or blocked by YouTube right now. Try again in a minute.";
+  }
+  if (/innertube/i.test(raw) && /UNPLAYABLE|ERROR|LOGIN_REQUIRED/i.test(raw)) {
+    return "YouTube refused playback for this video via the free cloud path.";
+  }
+  // Keep short host errors; strip huge Java stacks from Piped.
+  const firstLine = raw.split("\n")[0] ?? raw;
+  return firstLine.length > 180 ? `${firstLine.slice(0, 177)}…` : firstLine;
 }
 
 /** Android VR InnerTube client returns direct googlevideo URLs (no cipher). */
@@ -285,7 +307,14 @@ async function fetchPiped(videoId: string): Promise<PipedResponse> {
           continue;
         }
         if (!res.ok) {
-          errors.push(`${new URL(base).host} HTTP ${res.status}`);
+          let detail = `${new URL(base).host} HTTP ${res.status}`;
+          try {
+            const errBody = (await res.json()) as PipedResponse;
+            if (errBody.error) detail = errBody.error;
+          } catch {
+            /* ignore non-JSON error bodies */
+          }
+          errors.push(detail);
           continue;
         }
         const type = res.headers.get("content-type") ?? "";
