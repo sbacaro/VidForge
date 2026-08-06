@@ -1,4 +1,5 @@
 import Foundation
+import VidForgeCore
 
 @main
 struct VidForgeCLI {
@@ -11,7 +12,7 @@ struct VidForgeCLI {
         }
 
         if args.contains("--version") || args.contains("-V") {
-            print("VidForge \(version) (bundled yt-dlp + ffmpeg)")
+            print("VidForge \(version) (bundled yt-dlp + ffmpeg + browser cookies)")
             Foundation.exit(0)
         }
 
@@ -23,12 +24,12 @@ struct VidForgeCLI {
             fputs("error: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)
         } catch {
-            fputs("error: \(error.localizedDescription)\n", stderr)
+            fputs("error: \(BrowserCookies.friendlyError(error.localizedDescription))\n", stderr)
             Foundation.exit(1)
         }
     }
 
-    static let version = "1.0.0"
+    static let version = "1.1.0"
 
     static var helpText: String {
         """
@@ -44,6 +45,13 @@ struct VidForgeCLI {
           -o, --output <dir>     Output folder (default: ~/Movies/VidForge)
           -h, --help             Show help
           -V, --version          Show version
+
+        AUTH:
+          Uses YouTube session cookies from your browser (auto-detect):
+            chrome → chromium → brave → edge → safari
+          Force a browser:  export VIDFORGE_BROWSER=chrome
+          Stay logged into YouTube in that browser. On macOS you may need
+          Full Disk Access for Terminal (System Settings → Privacy & Security).
 
         EXAMPLES:
           vidforge "https://www.youtube.com/watch?v=…"
@@ -190,16 +198,24 @@ struct ForgeCLIEngine {
         try ToolPaths.requireTools()
         try FileManager.default.createDirectory(at: options.outputDirectory, withIntermediateDirectories: true)
 
+        let cookies = BrowserCookies.detect(ytDlp: ToolPaths.ytDlp, ffmpegHome: ToolPaths.home.path)
+        let cookieArgs = BrowserCookies.arguments(for: cookies)
+
         print("╔══════════════════════════════════════╗")
         print("║           V I D F O R G E            ║")
         print("╚══════════════════════════════════════╝")
         print("Ore:    \(options.url)")
         print("Alloy:  \(options.alloy.rawValue)")
         print("Output: \(options.outputDirectory.path)")
+        if cookies.ok {
+            print("Auth:   \(cookies.browser ?? "?") cookies")
+        } else {
+            print("Auth:   \(cookies.message)")
+        }
         print("")
 
         print("→ Prospecting…")
-        let probe = try await probe(url: options.url)
+        let probe = try await probe(url: options.url, cookieArgs: cookieArgs)
         print("  Title:      \(probe.title)")
         if let res = probe.resolution { print("  Resolution: \(res)") }
         if let dur = probe.durationLabel { print("  Duration:   \(dur)") }
@@ -210,7 +226,8 @@ struct ForgeCLIEngine {
             url: options.url,
             alloy: options.alloy,
             title: probe.title,
-            outputDirectory: options.outputDirectory
+            outputDirectory: options.outputDirectory,
+            cookieArgs: cookieArgs
         )
         print("  Smelted: \(downloaded.lastPathComponent)")
         print("")
@@ -232,19 +249,30 @@ struct ForgeCLIEngine {
         var durationLabel: String?
     }
 
-    private func probe(url: String) async throws -> Probe {
-        let output = try await runProcess(
-            executable: ToolPaths.ytDlp,
-            arguments: [
-                "--no-update",
-                "--ffmpeg-location", ToolPaths.home.path,
-                "--dump-single-json",
-                "--no-playlist",
-                "--no-warnings",
-                "--skip-download",
-                url
-            ]
-        )
+    private func probe(url: String, cookieArgs: [String]) async throws -> Probe {
+        var args = [
+            "--no-update",
+            "--ffmpeg-location", ToolPaths.home.path,
+            "--dump-single-json",
+            "--no-playlist",
+            "--no-warnings",
+            "--skip-download"
+        ]
+        args += cookieArgs
+        args.append(url)
+
+        let output: String
+        do {
+            output = try await runProcess(
+                executable: ToolPaths.ytDlp,
+                arguments: args
+            )
+        } catch let err as CLIError {
+            if case .processFailed(let message) = err {
+                throw CLIError.processFailed(BrowserCookies.friendlyError(message))
+            }
+            throw err
+        }
 
         guard let data = output.data(using: .utf8),
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -267,7 +295,13 @@ struct ForgeCLIEngine {
         return Probe(title: title, resolution: resolution, durationLabel: durationLabel)
     }
 
-    private func download(url: String, alloy: Alloy, title: String, outputDirectory: URL) async throws -> URL {
+    private func download(
+        url: String,
+        alloy: Alloy,
+        title: String,
+        outputDirectory: URL,
+        cookieArgs: [String]
+    ) async throws -> URL {
         let safe = title
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: " -")
@@ -285,6 +319,7 @@ struct ForgeCLIEngine {
             "--no-mtime",
             "--no-part"
         ]
+        args += cookieArgs
 
         switch alloy {
         case .archivePure:
@@ -297,11 +332,19 @@ struct ForgeCLIEngine {
         args.append(url)
 
         let before = Set(contents(of: outputDirectory))
-        let stdout = try await runProcess(
-            executable: ToolPaths.ytDlp,
-            arguments: args,
-            echo: true
-        )
+        let stdout: String
+        do {
+            stdout = try await runProcess(
+                executable: ToolPaths.ytDlp,
+                arguments: args,
+                echo: true
+            )
+        } catch let err as CLIError {
+            if case .processFailed(let message) = err {
+                throw CLIError.processFailed(BrowserCookies.friendlyError(message))
+            }
+            throw err
+        }
 
         if let printed = stdout
             .split(separator: "\n")

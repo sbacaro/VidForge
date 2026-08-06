@@ -2,7 +2,8 @@ import "./styles.css";
 import { ALLOYS } from "./types";
 import type { AlloyId, ForgeJob } from "./types";
 import { alloyById, phaseLabel, uid } from "./lib";
-import { forgeCloud, pingCloud } from "./engine";
+import { forgeJob, pingEngine, revealLocalPath } from "./engine";
+import type { EngineStatus } from "./engine";
 
 const root = document.querySelector<HTMLDivElement>("#app");
 if (!root) throw new Error("#app missing");
@@ -10,7 +11,7 @@ if (!root) throw new Error("#app missing");
 const state = {
   selected: "archive-pure" as AlloyId,
   jobs: [] as ForgeJob[],
-  online: false,
+  engine: { mode: "offline", label: "Checking forge…" } as EngineStatus,
   busy: false,
 };
 
@@ -22,7 +23,7 @@ root.innerHTML = `
       <header class="topbar">
         <div class="brand">
           <strong>VIDFORGE</strong>
-          <span>GitHub Pages UI · Cloudflare forge · nothing to install · v4</span>
+          <span>Pages UI · local companion with browser cookies · v5</span>
         </div>
       </header>
 
@@ -38,7 +39,7 @@ root.innerHTML = `
 
         <div class="statusline">
           <div class="pill"><span class="dot" id="engineDot"></span><span id="engineText">Checking forge…</span></div>
-          <span>Worker API · YouTube</span>
+          <span>Prefer local · cookies</span>
         </div>
       </section>
 
@@ -53,7 +54,7 @@ root.innerHTML = `
       <footer class="footer">
         <a href="https://github.com/sbacaro/VidForge" target="_blank" rel="noreferrer">GitHub</a>
         <span>·</span>
-        <span>No local companion</span>
+        <span id="footerHint">Run vidforge-ui for full quality</span>
       </footer>
     </div>
   </div>
@@ -64,7 +65,7 @@ bind();
 renderIngots();
 renderJobs();
 void refreshEngine();
-setInterval(() => void refreshEngine(), 20000);
+setInterval(() => void refreshEngine(), 12000);
 
 function seedSparks(): void {
   const host = document.querySelector("#sparks");
@@ -122,7 +123,7 @@ function renderJobs(): void {
     host.innerHTML = `
       <div class="empty">
         <strong>The anvil is cold.</strong>
-        Paste a YouTube link and strike. Runs entirely in your browser via GitHub Pages.
+        Paste a YouTube link and strike. Best results with the local companion (browser cookies).
       </div>
     `;
     return;
@@ -131,9 +132,12 @@ function renderJobs(): void {
   host.innerHTML = state.jobs
     .map((job) => {
       const alloy = alloyById(job.alloy);
-      const action = job.downloadUrl
-        ? `<a href="${escapeAttr(job.downloadUrl)}" target="_blank" rel="noreferrer">Download</a>`
-        : "";
+      let action = "";
+      if (job.downloadUrl) {
+        action = `<a href="${escapeAttr(job.downloadUrl)}" target="_blank" rel="noreferrer">Download</a>`;
+      } else if (job.output) {
+        action = `<button type="button" class="text-btn reveal" data-path="${escapeAttr(job.output)}">Reveal in Finder</button>`;
+      }
       return `
         <article class="job">
           <div class="job-top">
@@ -152,18 +156,37 @@ function renderJobs(): void {
       `;
     })
     .join("");
+
+  host.querySelectorAll<HTMLButtonElement>("button.reveal").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const path = btn.dataset.path;
+      if (path) void revealLocalPath(path);
+    });
+  });
 }
 
 async function refreshEngine(): Promise<void> {
-  state.online = await pingCloud();
+  state.engine = await pingEngine();
   const dot = document.querySelector("#engineDot");
   const text = document.querySelector("#engineText");
+  const hint = document.querySelector("#footerHint");
   if (dot) {
-    dot.classList.toggle("on", state.online);
-    dot.classList.toggle("off", !state.online);
+    const on = state.engine.mode === "local" || state.engine.mode === "cloud";
+    dot.classList.toggle("on", on && state.engine.mode === "local");
+    dot.classList.toggle("off", !on || state.engine.mode === "cloud");
+    if (state.engine.mode === "cloud") {
+      dot.classList.add("off");
+      dot.classList.remove("on");
+    }
   }
-  if (text) {
-    text.textContent = state.online ? "Cloud forge ready" : "Cloud forge offline";
+  if (text) text.textContent = state.engine.label;
+  if (hint) {
+    hint.textContent =
+      state.engine.mode === "local"
+        ? state.engine.cookiesOk
+          ? `Local companion · ${state.engine.cookiesBrowser ?? "browser"} cookies`
+          : "Local companion · grant cookie access if forge fails"
+        : "Run: export PATH=\"$HOME/.local/bin:$PATH\" && vidforge-ui";
   }
 }
 
@@ -195,7 +218,7 @@ async function strike(): Promise<void> {
   };
 
   try {
-    await forgeCloud(job, patch);
+    await forgeJob(job, patch);
   } catch (err) {
     patch({
       phase: "failed",

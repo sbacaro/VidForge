@@ -25,6 +25,7 @@ export interface ForgeJob {
   progress: number;
   status: string;
   downloadUrl?: string;
+  output?: string;
   error?: string;
   createdAt: number;
 }

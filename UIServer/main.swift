@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import VidForgeCore
 
 @main
 struct VidForgeServerMain {
@@ -13,7 +14,10 @@ struct VidForgeServerMain {
 
             Serves the forge API for the GitHub Pages UI and opens:
             https://sbacaro.github.io/VidForge/
-            Engines are bundled locally; nothing else is downloaded at runtime.
+
+            Uses bundled yt-dlp/ffmpeg plus cookies from your browser
+            (auto: chrome → chromium → brave → edge → safari).
+            Override with VIDFORGE_BROWSER=chrome|safari|…
             """)
             Foundation.exit(0)
         }
@@ -30,6 +34,12 @@ struct VidForgeServerMain {
             Foundation.exit(1)
         }
 
+        let cookies = await CookieSession.shared.current(
+            ytDlp: ToolPaths.ytDlp,
+            ffmpegHome: ToolPaths.home.path,
+            force: true
+        )
+
         let server = ForgeHTTPServer(port: port)
         do {
             try await server.start()
@@ -42,6 +52,11 @@ struct VidForgeServerMain {
         let pages = "https://sbacaro.github.io/VidForge/"
         print("VidForge companion API → \(api)")
         print("VidForge UI            → \(pages)")
+        if cookies.ok {
+            print("Browser cookies        → \(cookies.browser ?? "?")")
+        } else {
+            fputs("warning: \(cookies.message)\n", stderr)
+        }
         print("Press Ctrl+C to stop.")
         _ = Process.launchedProcess(launchPath: "/usr/bin/open", arguments: [pages])
 
@@ -167,10 +182,29 @@ actor JobHub {
         }
 
         do {
-            let probe = try await Shell.runJSON(executable: ToolPaths.ytDlp, arguments: [
+            let cookies = await CookieSession.shared.current(
+                ytDlp: ToolPaths.ytDlp,
+                ffmpegHome: ToolPaths.home.path
+            )
+            let cookieArgs = BrowserCookies.arguments(for: cookies)
+            if cookies.ok {
+                update(jobID) {
+                    $0.status = "Reading ore with \(cookies.browser ?? "browser") cookies…"
+                }
+            } else {
+                update(jobID) {
+                    $0.status = "Cookie jar weak — trying anyway…"
+                }
+            }
+
+            var probeArgs = [
                 "--no-update", "--ffmpeg-location", ToolPaths.home.path,
-                "--dump-single-json", "--no-playlist", "--no-warnings", "--skip-download", job.url
-            ])
+                "--dump-single-json", "--no-playlist", "--no-warnings", "--skip-download"
+            ]
+            probeArgs += cookieArgs
+            probeArgs.append(job.url)
+
+            let probe = try await Shell.runJSON(executable: ToolPaths.ytDlp, arguments: probeArgs)
             let title = (probe["title"] as? String) ?? "Untitled"
             update(jobID) {
                 $0.title = title
@@ -187,6 +221,7 @@ actor JobHub {
                 "-f", alloy.formatSelector, "-o", template,
                 "--print", "after_move:filepath", "--no-mtime", "--no-part"
             ]
+            args += cookieArgs
             switch alloy {
             case .archivePure: args += ["--merge-output-format", "mkv", "--remux-video", "mkv"]
             case .crystal, .tempered: args += ["--merge-output-format", "mkv"]
@@ -236,10 +271,11 @@ actor JobHub {
                 $0.output = forged.path
             }
         } catch {
+            let message = BrowserCookies.friendlyError(error.localizedDescription)
             update(jobID) {
                 $0.phase = "failed"
-                $0.status = error.localizedDescription
-                $0.error = error.localizedDescription
+                $0.status = message
+                $0.error = message
             }
         }
     }
@@ -443,7 +479,28 @@ final class ForgeHTTPServer: @unchecked Sendable {
         } else if method == "GET" && pathOnly == "/" {
             response = http(200, "text/html; charset=utf-8", Self.landingHTML)
         } else if method == "GET" && pathOnly == "/api/health" {
-            response = http(200, "application/json", #"{"ok":true,"service":"vidforge-companion"}"#)
+            let cookies = await CookieSession.shared.current(
+                ytDlp: ToolPaths.ytDlp,
+                ffmpegHome: ToolPaths.home.path
+            )
+            struct Health: Encodable {
+                let ok: Bool
+                let service: String
+                let version: String
+                let cookiesBrowser: String?
+                let cookiesOk: Bool
+                let cookiesMessage: String
+            }
+            let payload = Health(
+                ok: true,
+                service: "vidforge-companion",
+                version: BrowserCookies.version,
+                cookiesBrowser: cookies.browser,
+                cookiesOk: cookies.ok,
+                cookiesMessage: cookies.message
+            )
+            let data = (try? JSONEncoder().encode(payload)) ?? Data(#"{"ok":true,"service":"vidforge-companion"}"#.utf8)
+            response = http(200, "application/json", String(data: data, encoding: .utf8) ?? #"{"ok":true}"#)
         } else if method == "GET" && pathOnly == "/api/jobs" {
             let jobs = await hub.list()
             let data = (try? JSONEncoder().encode(jobs)) ?? Data("[]".utf8)
