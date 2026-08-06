@@ -1,7 +1,6 @@
 /**
  * VidForge cloud API — Cloudflare Worker (free).
- * Resolves YouTube streams via Piped instances (server-side) and returns a download URL.
- * Nothing runs on the user's computer.
+ * Resolves YouTube streams via InnerTube (primary) and Piped (fallback).
  */
 
 export interface Env {}
@@ -35,10 +34,28 @@ interface PipedResponse {
   message?: string;
 }
 
-/** Prefer known-good hosts; dead mirrors (526/301 traps) are omitted. */
-const PIPED_APIS = ["https://api.piped.private.coffee"];
+interface YtFormat {
+  url?: string;
+  mimeType?: string;
+  qualityLabel?: string;
+  quality?: string;
+  bitrate?: number;
+  averageBitrate?: number;
+  width?: number;
+  height?: number;
+  contentLength?: string;
+}
 
-const INSTANCE_DIRECTORY = "https://piped-instances.kavin.rocks/";
+interface YtPlayerResponse {
+  playabilityStatus?: { status?: string; reason?: string };
+  videoDetails?: { title?: string; author?: string; lengthSeconds?: string };
+  streamingData?: {
+    formats?: YtFormat[];
+    adaptiveFormats?: YtFormat[];
+  };
+}
+
+const PIPED_APIS = ["https://api.piped.private.coffee"];
 
 const ALLOWED_ORIGINS = new Set([
   "https://sbacaro.github.io",
@@ -82,7 +99,7 @@ export default {
           );
         }
 
-        const meta = await fetchPiped(videoId);
+        const meta = await resolveStreams(videoId);
         const pick = pickStream(meta, alloy);
         if (!pick?.url) {
           return cors(json({ error: "No suitable stream found for this alloy." }, 502), origin);
@@ -117,71 +134,182 @@ export default {
   },
 };
 
-async function resolvePipedBases(): Promise<string[]> {
-  const preferred = [...PIPED_APIS];
-  try {
-    const res = await fetch(INSTANCE_DIRECTORY, {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) return preferred;
-    const rows = (await res.json()) as Array<{ api_url?: string; uptime_24h?: number }>;
-    const discovered = rows
-      .filter((row) => (row.uptime_24h ?? 0) >= 50 && typeof row.api_url === "string")
-      .map((row) => row.api_url!.replace(/\/$/, ""))
-      // Skip hosts that currently serve SSL/edge failures or broken redirects.
-      .filter((url) => !/kavin\.rocks|adminforge\.de/i.test(url));
-    return [...new Set([...preferred, ...discovered])];
-  } catch {
-    return preferred;
-  }
-}
-
-async function fetchPiped(videoId: string): Promise<PipedResponse> {
-  const bases = await resolvePipedBases();
+async function resolveStreams(videoId: string): Promise<PipedResponse> {
   const errors: string[] = [];
 
-  for (const base of bases) {
-    try {
-      const res = await fetch(`${base}/streams/${videoId}`, {
-        redirect: "manual",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "VidForge/1.0 (+https://github.com/sbacaro/VidForge)",
-        },
-      });
-      if (res.status >= 300 && res.status < 400) {
-        errors.push(`${new URL(base).host} bad redirect`);
-        continue;
-      }
-      if (!res.ok) {
-        errors.push(`${new URL(base).host} HTTP ${res.status}`);
-        continue;
-      }
-      const type = res.headers.get("content-type") ?? "";
-      if (!type.includes("json")) {
-        errors.push(`${new URL(base).host} non-JSON`);
-        continue;
-      }
-      const data = (await res.json()) as PipedResponse;
-      if (data.error) {
-        errors.push(data.error);
-        continue;
-      }
-      if ((data.videoStreams?.length ?? 0) + (data.audioStreams?.length ?? 0) === 0) {
-        errors.push(`${new URL(base).host} empty streams`);
-        continue;
-      }
-      return data;
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
-    }
+  try {
+    return await fetchInnerTube(videoId);
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  try {
+    return await fetchPiped(videoId);
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
   }
 
   throw new Error(
     errors.length
-      ? `Cloud resolver unavailable (${errors.slice(0, 3).join(" · ")}). Try again shortly.`
+      ? `Cloud resolver unavailable (${errors.slice(0, 2).join(" · ")}). Try again shortly.`
       : "Cloud resolver unavailable. Try again shortly."
   );
+}
+
+/** Android VR InnerTube client returns direct googlevideo URLs (no cipher). */
+async function fetchInnerTube(videoId: string): Promise<PipedResponse> {
+  const body = {
+    context: {
+      client: {
+        clientName: "ANDROID_VR",
+        clientVersion: "1.60.19",
+        deviceMake: "Oculus",
+        deviceModel: "Quest 3",
+        osName: "Android",
+        osVersion: "12L",
+        androidSdkVersion: 32,
+        hl: "en",
+        gl: "US",
+      },
+    },
+    videoId,
+    contentCheckOk: true,
+    racyCheckOk: true,
+  };
+
+  const endpoints = [
+    "https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false",
+    "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+  ];
+
+  const errors: string[] = [];
+  for (const endpoint of endpoints) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.60.19",
+            "X-Goog-Api-Format-Version": "2",
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          errors.push(`innertube HTTP ${res.status}`);
+          continue;
+        }
+        const data = (await res.json()) as YtPlayerResponse;
+        const status = data.playabilityStatus?.status ?? "UNKNOWN";
+        if (status !== "OK") {
+          errors.push(data.playabilityStatus?.reason || `innertube ${status}`);
+          continue;
+        }
+        const mapped = mapInnerTube(data);
+        const count =
+          (mapped.videoStreams?.length ?? 0) + (mapped.audioStreams?.length ?? 0);
+        if (!count) {
+          errors.push("innertube empty streams");
+          continue;
+        }
+        return mapped;
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+  throw new Error(errors[0] || "innertube failed");
+}
+
+function mapInnerTube(data: YtPlayerResponse): PipedResponse {
+  const formats = data.streamingData?.formats ?? [];
+  const adaptive = data.streamingData?.adaptiveFormats ?? [];
+  const videoStreams: PipedStream[] = [];
+  const audioStreams: PipedStream[] = [];
+
+  for (const f of formats) {
+    if (!f.url) continue;
+    videoStreams.push({
+      url: f.url,
+      mimeType: f.mimeType,
+      quality: f.qualityLabel || f.quality || (f.height ? `${f.height}p` : undefined),
+      videoOnly: false,
+      bitrate: f.bitrate ?? f.averageBitrate,
+      contentLength: f.contentLength ? Number(f.contentLength) : undefined,
+    });
+  }
+
+  for (const f of adaptive) {
+    if (!f.url) continue;
+    const mime = f.mimeType ?? "";
+    const quality = f.qualityLabel || f.quality || (f.height ? `${f.height}p` : undefined);
+    const stream: PipedStream = {
+      url: f.url,
+      mimeType: mime,
+      quality,
+      bitrate: f.bitrate ?? f.averageBitrate,
+      contentLength: f.contentLength ? Number(f.contentLength) : undefined,
+    };
+    if (mime.startsWith("audio/")) {
+      audioStreams.push(stream);
+    } else if (mime.startsWith("video/")) {
+      videoStreams.push({ ...stream, videoOnly: true });
+    }
+  }
+
+  return {
+    title: data.videoDetails?.title,
+    uploader: data.videoDetails?.author,
+    duration: data.videoDetails?.lengthSeconds
+      ? Number(data.videoDetails.lengthSeconds)
+      : undefined,
+    videoStreams,
+    audioStreams,
+  };
+}
+
+async function fetchPiped(videoId: string): Promise<PipedResponse> {
+  const errors: string[] = [];
+  for (const base of PIPED_APIS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(`${base}/streams/${videoId}`, {
+          redirect: "manual",
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "VidForge/1.0 (+https://github.com/sbacaro/VidForge)",
+          },
+        });
+        if (res.status >= 300 && res.status < 400) {
+          errors.push(`${new URL(base).host} bad redirect`);
+          continue;
+        }
+        if (!res.ok) {
+          errors.push(`${new URL(base).host} HTTP ${res.status}`);
+          continue;
+        }
+        const type = res.headers.get("content-type") ?? "";
+        if (!type.includes("json")) {
+          errors.push(`${new URL(base).host} non-JSON`);
+          continue;
+        }
+        const data = (await res.json()) as PipedResponse;
+        if (data.error) {
+          errors.push(data.error);
+          continue;
+        }
+        const count = (data.videoStreams?.length ?? 0) + (data.audioStreams?.length ?? 0);
+        if (!count) {
+          errors.push(`${new URL(base).host} empty streams`);
+          continue;
+        }
+        return data;
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+  throw new Error(errors[0] || "piped failed");
 }
 
 function pickStream(
@@ -203,7 +331,7 @@ function pickStream(
     };
   }
 
-  // Prefer progressive (video+audio) streams for one-click browser download.
+  // Prefer progressive (video+audio) for one-click browser download.
   const muxed = videos.filter((v) => v.videoOnly === false && v.url);
   const pool = muxed.length ? muxed : videos.filter((v) => v.url);
   if (!pool.length) return null;
@@ -217,7 +345,6 @@ function pickStream(
 
   let chosen = scored[0];
   if (alloy === "tempered") {
-    // Prefer closest to 1080p without going needlessly higher when muxed exists.
     chosen =
       scored.find((s) => s.height > 0 && s.height <= 1080) ??
       scored.find((s) => s.height === 720) ??
@@ -242,8 +369,8 @@ function parseHeight(quality?: string): number {
 function extFromMime(mime?: string, fallback = ".mp4"): string {
   if (!mime) return fallback;
   if (mime.includes("webm")) return ".webm";
-  if (mime.includes("mp4")) return ".mp4";
   if (mime.includes("audio/mp4") || mime.includes("m4a")) return ".m4a";
+  if (mime.includes("mp4")) return ".mp4";
   if (mime.includes("opus")) return ".opus";
   if (mime.includes("mpeg")) return ".mp3";
   return fallback;
