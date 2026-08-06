@@ -1,32 +1,32 @@
 import type { AlloyId, ForgeJob } from "./types";
 import { alloyById } from "./lib";
 
-/** Public Piped instances that allow browser CORS (*). */
-const PIPED_APIS = [
-  "https://api.piped.private.coffee",
-  "https://pipedapi.adminforge.de",
-  "https://pipedapi.kavin.rocks",
-];
+/** Cloudflare Worker that resolves streams server-side (avoids browser CORS / Load failed). */
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ||
+  "https://vidforge.samuelbacaro.workers.dev";
 
-interface PipedStream {
-  url?: string;
-  format?: string;
-  quality?: string;
-  mimeType?: string;
-  videoOnly?: boolean;
-  bitrate?: number;
-}
-
-interface PipedResponse {
+interface ForgeResponse {
+  status?: string;
   title?: string;
-  videoStreams?: PipedStream[];
-  audioStreams?: PipedStream[];
+  downloadUrl?: string;
+  quality?: string | null;
+  filename?: string;
   error?: string;
-  message?: string;
 }
 
 export async function pingCloud(): Promise<boolean> {
-  return navigator.onLine;
+  try {
+    const res = await fetch(`${API_BASE}/api/health`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { ok?: boolean };
+    return Boolean(data.ok);
+  } catch {
+    return navigator.onLine;
+  }
 }
 
 export async function forgeCloud(
@@ -43,91 +43,47 @@ export async function forgeCloud(
   const alloy = alloyById(job.alloy);
   onUpdate({ phase: "smelting", progress: 0.35, status: `Smelting ${alloy.name}…` });
 
-  const meta = await fetchPiped(videoId);
-  const pick = pickStream(meta, job.alloy);
-  if (!pick?.url) {
-    throw new Error("No suitable stream found for this alloy.");
+  let data: ForgeResponse;
+  try {
+    const res = await fetch(`${API_BASE}/api/forge`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: job.url, alloy: job.alloy }),
+    });
+    data = (await res.json()) as ForgeResponse;
+    if (!res.ok) {
+      throw new Error(data.error || `Cloud forge HTTP ${res.status}`);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "Load failed" || msg === "Failed to fetch" || msg.includes("NetworkError")) {
+      throw new Error("Cloud API unreachable. Check your network or try again in a moment.");
+    }
+    throw e instanceof Error ? e : new Error(msg);
   }
+
+  if (data.error) throw new Error(data.error);
+  if (!data.downloadUrl) throw new Error("Cloud forge returned no download URL.");
 
   onUpdate({
     phase: "quenching",
     progress: 0.8,
-    title: meta.title || job.title,
-    status: pick.quality ? `Quenching ${pick.quality}…` : "Opening download…",
+    title: data.title || job.title,
+    status: data.quality ? `Quenching ${data.quality}…` : "Opening download…",
   });
 
   onUpdate({
     phase: "finished",
     progress: 1,
-    title: meta.title || job.title,
-    downloadUrl: pick.url,
+    title: data.title || job.title,
+    downloadUrl: data.downloadUrl,
     status: "Ready — tap Download",
   });
 
-  window.open(pick.url, "_blank", "noopener,noreferrer");
-}
-
-async function fetchPiped(videoId: string): Promise<PipedResponse> {
-  let last = "All cloud resolvers failed.";
-  for (const base of PIPED_APIS) {
-    try {
-      const res = await fetch(`${base}/streams/${videoId}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) {
-        last = `${base} HTTP ${res.status}`;
-        continue;
-      }
-      const data = (await res.json()) as PipedResponse;
-      if (data.error) {
-        last = data.error;
-        continue;
-      }
-      const count = (data.videoStreams?.length ?? 0) + (data.audioStreams?.length ?? 0);
-      if (!count) {
-        last = "Empty stream list";
-        continue;
-      }
-      return data;
-    } catch (e) {
-      last = e instanceof Error ? e.message : String(e);
-    }
-  }
-  throw new Error(last);
-}
-
-function pickStream(
-  meta: PipedResponse,
-  alloy: AlloyId
-): { url: string; quality?: string } | null {
-  const videos = meta.videoStreams ?? [];
-  const audios = meta.audioStreams ?? [];
-
-  if (alloy === "audio-ingot") {
-    const best = [...audios].sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
-    return best?.url ? { url: best.url, quality: best.quality ?? `${best.bitrate ?? "?"}bps` } : null;
-  }
-
-  const muxed = videos.filter((v) => v.videoOnly === false && v.url);
-  const pool = muxed.length ? muxed : videos.filter((v) => v.url);
-  if (!pool.length) return null;
-
-  const ranked = pool
-    .map((v) => ({ v, h: parseHeight(v.quality) }))
-    .sort((a, b) => b.h - a.h || (b.v.bitrate ?? 0) - (a.v.bitrate ?? 0));
-
-  let chosen = ranked[0];
-  if (alloy === "tempered") {
-    chosen = ranked.find((x) => x.h > 0 && x.h <= 1080) ?? ranked.find((x) => x.h === 720) ?? ranked[0];
-  }
-
-  return { url: chosen.v.url!, quality: chosen.v.quality ?? `${chosen.h}p` };
-}
-
-function parseHeight(quality?: string): number {
-  if (!quality) return 0;
-  const m = quality.match(/(\d{3,4})/);
-  return m ? Number(m[1]) : 0;
+  window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
 }
 
 function extractYouTubeId(input: string): string | null {

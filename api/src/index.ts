@@ -36,10 +36,9 @@ interface PipedResponse {
 }
 
 const PIPED_APIS = [
-  "https://pipedapi.kavin.rocks",
-  "https://pipedapi.nosebs.ru",
   "https://api.piped.private.coffee",
   "https://pipedapi.adminforge.de",
+  "https://pipedapi.kavin.rocks",
 ];
 
 const ALLOWED_ORIGINS = new Set([

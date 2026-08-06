@@ -22,7 +22,7 @@ root.innerHTML = `
       <header class="topbar">
         <div class="brand">
           <strong>VIDFORGE</strong>
-          <span>100% browser. Hosted on GitHub Pages. Nothing to install. · v3</span>
+          <span>GitHub Pages UI · Cloudflare forge · nothing to install · v4</span>
         </div>
       </header>
 
@@ -38,7 +38,7 @@ root.innerHTML = `
 
         <div class="statusline">
           <div class="pill"><span class="dot" id="engineDot"></span><span id="engineText">Checking forge…</span></div>
-          <span>Free cloud · YouTube</span>
+          <span>Worker API · YouTube</span>
         </div>
       </section>
 
@@ -163,7 +163,7 @@ async function refreshEngine(): Promise<void> {
     dot.classList.toggle("off", !state.online);
   }
   if (text) {
-    text.textContent = state.online ? "Cloud forge ready" : "Network offline";
+    text.textContent = state.online ? "Cloud forge ready" : "Cloud forge offline";
   }
 }
 

@@ -1,5 +1,5 @@
 {
-  "name": "vidforge-api",
+  "name": "vidforge",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "workers_dev": true,
