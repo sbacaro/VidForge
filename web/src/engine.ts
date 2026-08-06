@@ -1,4 +1,4 @@
-import type { AlloyId, ForgeJob } from "./types";
+import type { ForgeJob } from "./types";
 import { alloyById } from "./lib";
 
 /** Cloudflare Worker that resolves streams server-side (avoids browser CORS / Load failed). */
